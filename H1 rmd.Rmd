@@ -2,29 +2,154 @@
 title: "H1"
 author: "Manuel Romero"
 date: "9/5/2021"
-output: pdf_document
+output:
+  pdf_document: default
+  word_document: default
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+library(dplyr)
+library(tidyquant)
+library(quantmod)
+library(finreportr)
+library(plyr)
+
+
+
+#FANG easier to read
+```{r echo=TRUE}
+
+FANG_daily <- FANG |>
+    group_by(symbol) |>
+    ggplot(aes(x = date, y = adjusted, color = symbol))+
+    geom_line(size = 1) +
+    labs(title = "Daily stock prices - easier to read", 
+         x = "", y = "adjusted prices", color="") +
+    facet_wrap(~ symbol, ncol = 2, scales = "free_y") +
+    scale_y_continuous(labels = scales::dollar) +
+    theme_tq() + scale_color_tq()
+FANG_daily
 ```
 
-## R Markdown
-
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
-
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
-
-```{r cars}
-summary(cars)
+#Create yearly returns
+```{r echo=TRUE}
+FANG_annual_returns<-FANG|>
+    group_by(symbol)|>
+    tq_transmute(select =adjusted
+    ,mutate_fun =periodReturn,
+    period ="yearly",type="arithmetic")
+FANG_annual_returns
+```
+#Gráfica annual returns
+```{r echo=TRUE}
+FANG_annual_cum_returns<-FANG_annual_returns|>
+    mutate(cr =100*cumprod(1+yearly.returns))|>
+    
+    # Plot the results.
+    ggplot(aes(x =date-365,y =cr,fill =symbol))+geom_col()+
+    labs(title ="Yearly cumulative USD returns."
+         ,subtitle ="100 USD investment growth from 2013-01-01 to 2016-12-31.",
+         x ="",y ="USD value at the end of the year",color ="")+
+    scale_y_continuous(labels =scales::dollar)+
+    facet_wrap(~symbol,ncol =2,scales ="free_y")+
+    theme_tq()+scale_color_tq()
+FANG_annual_cum_returns
 ```
 
-## Including Plots
+#Rendimientos mensuales
+```{r echo=TRUE}
+FANG_monthly_returns<-FANG|>
+    group_by(symbol)|>
+    tq_transmute(select =adjusted,
+                 mutate_fun =periodReturn,
+                 period     ="monthly",
+                 type="arithmetic")
 
-You can also embed plots, for example:
-
-```{r pressure, echo=FALSE}
-plot(pressure)
+ggplot(FANG_monthly_returns,aes(x =date-12,
+                                y =monthly.returns,fill =symbol))+
+    geom_col()+
+    geom_hline(yintercept =0,color =palette_light()[[1]])+
+    scale_y_continuous(labels =scales::percent)+
+    labs(title ="FANG: Monthly Returns",y ="Monthly Returns",
+         x ="")+
+    facet_wrap(~symbol,ncol =2,scales ="free_y")+
+    theme_tq()+scale_fill_tq()
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+# Calculate monthly cumulative returns.
+```{r echo=TRUE}
+FANG_monthly_cum_returns<-FANG_monthly_returns|>
+    mutate(cr =100*cumprod(1+monthly.returns))
+
+ggplot(FANG_monthly_cum_returns,aes(x =date-12,y =cr,color =symbol))+
+    geom_line(size =1)+
+    labs(title ="Monthly cumulative USD returns.",
+    subtitle ="100 USD investment growth from 2013-01-01 to 2016-12-31.",
+    x ="",y ="USD value at the end of the year",
+    color ="")+
+    scale_y_continuous(labels =scales::dollar)+
+    theme_tq()+scale_color_tq()
+```
+#Dividido por empresa
+```{r echo=TRUE}
+ggplot(FANG_monthly_cum_returns,aes(x =date-12,y =cr,
+    color =symbol))+
+    geom_line(size =1)+
+    labs(title ="Monthly cumulative USD returns.",
+         subtitle ="100 USD investment growth from 2013-01-01 to 2016-12-31.",
+         x ="",y ="USD value at the end of the year",color ="")+
+    scale_y_continuous(labels =scales::dollar)+
+    facet_wrap(~symbol,ncol =2,scales ="free_y")+
+    theme_tq()+scale_color_tq()
+```
+#Density plots
+```{r echo=TRUE}
+ggplot(FANG_monthly_returns,aes(x =monthly.returns,
+        fill =symbol))+
+    geom_density(alpha =0.5)+
+    geom_hline(yintercept =0,color =palette_light()[[1]])+
+    labs(title ="FANG: Charting the Monthly Returns",
+         x ="Monthly Returns",y ="Density")+xlim(-0.3,0.9)+
+    theme_tq()+scale_fill_tq()
+```
+#Dividido por empresa, density plots
+```{r echo=TRUE}
+ggplot(FANG_monthly_returns,aes(x =monthly.returns,fill =symbol))+
+    geom_density(alpha =0.5)+
+    geom_hline(yintercept =0,color =palette_light()[[1]])+
+    labs(title ="FANG: Charting the Monthly Returns",
+         x ="Monthly Returns",y ="Density")+xlim(-0.3,0.9)+
+    theme_tq()+scale_fill_tq()+facet_wrap(~symbol,ncol =2)
+```
+
+#Relevant stadistics
+```{r echo=TRUE}
+FANG_stats<-FANG_monthly_returns|>
+    summarise(mean =mean(monthly.returns),sd =sd(monthly.returns),
+              sr =mean/sd,iqr =IQR(monthly.returns))
+FANG_stats
+```
+
+#Mean variance plot
+```{r echo=TRUE}
+FANG_stats|>
+  ggplot(aes(x =sd, y =mean, color=symbol)) +
+  geom_point(size =5)+
+  geom_text(aes(label =paste0(round(sr,3))),
+            vjust =2,color ="black",size =3.5)+
+  xlim(0.04,0.18)+ylim(0.01,0.06)+
+  labs(title ="The higher the risk, the higher the return",
+       subtitle ="Numerical values represent return per unit of risk.",
+       x ="Risk",y ="Return")+theme_tq()
+
+```
+
+#FANG 2017 A 2021
+```{r echo=TRUE}
+tickers<- c("FB", "AMZN","NFLX", "GOOG")
+FANG2021 <- tq_get(tickers, get = "stock.prices", from= "2016-12-30", to = "2021-07-31")
+```
+
+
+
+
